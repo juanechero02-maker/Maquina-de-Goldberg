@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Máquina de Goldberg 3D – 6 Máquinas Simples</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#1a1a2e;font-family:'Segoe UI',system-ui,sans-serif;color:#e8e4d8;overflow:hidden;}
+  #ui{position:fixed;top:0;left:0;right:0;z-index:10;background:rgba(20,18,30,0.92);backdrop-filter:blur(8px);padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid rgba(255,255,255,0.08);}
+  #ui h1{font-size:13px;font-weight:600;color:#c8b8f0;letter-spacing:.5px;margin-right:4px;}
+  button{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#e8e4d8;padding:5px 13px;border-radius:6px;font-size:12px;cursor:pointer;transition:background .15s;}
+  button:hover{background:rgba(255,255,255,0.18);}
+  button.active{background:rgba(144,96,208,0.4);border-color:#9060d0;}
+  #stage-info{margin-left:auto;font-size:12px;color:#b0a8e0;min-width:220px;text-align:right;}
+  #tags{position:fixed;bottom:10px;left:10px;z-index:10;display:flex;flex-wrap:wrap;gap:5px;max-width:680px;}
+  .tag{font-size:11px;padding:3px 9px;border-radius:4px;font-weight:500;}
+  canvas{display:block;width:100vw;height:100vh;}
+  #progress{position:fixed;bottom:10px;right:10px;z-index:10;display:flex;gap:6px;}
+  .dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);transition:background .3s;}
+  .dot.active{background:#9060d0;}
+  .dot.done{background:#3a9e5f;}
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>🎯 MÁQUINA DE GOLDBERG</h1>
+  <button onclick="resetCamera()">↺ Reset cámara</button>
+  <span style="font-size:11px;color:rgba(255,255,255,0.35);margin-left:4px">Arrastra · Scroll para zoom · Explora las máquinas simples</span>
+</div>
+
+<div id="tags">
+  <span class="tag" style="background:#1e3a5f;color:#6eb3f7">① Plano inclinado</span>
+  <span class="tag" style="background:#5f1e1e;color:#f76e6e">② Palanca</span>
+  <span class="tag" style="background:#1e4a2e;color:#6ef7a0">③ Polea</span>
+  <span class="tag" style="background:#4a3a00;color:#f7d06e">④ Rueda y eje</span>
+  <span class="tag" style="background:#1e3a5f;color:#6eb3f7">⑤ Plano inclinado</span>
+  <span class="tag" style="background:#3a1e5f;color:#c06ef7">⑥ Catapulta</span>
+  <span class="tag" style="background:#3a2a10;color:#f7a06e">🏀 Canasta</span>
+</div>
+
+
+
+<canvas id="c"></canvas>
+
+<!-- FIX: Using jsDelivr CDN (more reliable than cdnjs for r134) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════
+//  RENDERER SETUP
+// ═══════════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+window.addEventListener('resize',()=>{
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  SCENE & CAMERA
+// ═══════════════════════════════════════════════════════════
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x12101e);
+scene.fog = new THREE.FogExp2(0x12101e, 0.018);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 300);
+let theta=-0.4, phi=0.42, radius=30;
+const camTarget = new THREE.Vector3(4,2,0);
+function updateCamera(){
+  camera.position.x = camTarget.x + radius * Math.sin(phi) * Math.sin(theta);
+  camera.position.y = camTarget.y + radius * Math.cos(phi);
+  camera.position.z = camTarget.z + radius * Math.sin(phi) * Math.cos(theta);
+  camera.lookAt(camTarget);
+}
+updateCamera();
+
+// ═══════════════════════════════════════════════════════════
+//  LIGHTS
+//  FIX: Never use Object.assign on Three.js light objects.
+//       Always call .position.set() explicitly after creation.
+// ═══════════════════════════════════════════════════════════
+scene.add(new THREE.AmbientLight(0x8890bb, 0.55));
+
+const sun = new THREE.DirectionalLight(0xfffbe8, 1.1);
+sun.position.set(12, 22, 14);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left   = -35;
+sun.shadow.camera.right  =  35;
+sun.shadow.camera.top    =  25;
+sun.shadow.camera.bottom =  -8;
+sun.shadow.bias = -0.001;
+scene.add(sun);
+
+// FIX: create lights then call .position.set() – never Object.assign
+const fillLight = new THREE.DirectionalLight(0x6688cc, 0.3);
+fillLight.position.set(-8, 6, -6);
+scene.add(fillLight);
+
+const pointLight = new THREE.PointLight(0xf0a050, 0.4, 20);
+pointLight.position.set(-14, 5, 2);
+scene.add(pointLight);
+
+// ═══════════════════════════════════════════════════════════
+//  MATERIALS
+// ═══════════════════════════════════════════════════════════
+const M = {
+  wood:  new THREE.MeshLambertMaterial({color:0xc08040}),
+  dwood: new THREE.MeshLambertMaterial({color:0x7a4a20}),
+  plank: new THREE.MeshLambertMaterial({color:0xd4a060}),
+  ball:  new THREE.MeshPhongMaterial({color:0xd0d0d8, shininess:160, specular:0xaaaacc}),
+  ball2: new THREE.MeshPhongMaterial({color:0xc8c090, shininess:120, specular:0x999966}),
+  blue:  new THREE.MeshLambertMaterial({color:0x2255bb}),
+  red:   new THREE.MeshLambertMaterial({color:0xbb2222}),
+  green: new THREE.MeshLambertMaterial({color:0x228844}),
+  yellow:new THREE.MeshLambertMaterial({color:0xddaa00}),
+  purple:new THREE.MeshLambertMaterial({color:0x8840cc}),
+  orange:new THREE.MeshLambertMaterial({color:0xdd6600}),
+  rope:  new THREE.MeshLambertMaterial({color:0xd4b070}),
+  wheel: new THREE.MeshLambertMaterial({color:0x222233}),
+  floor: new THREE.MeshLambertMaterial({color:0x1e1c2a}),
+  grid:  new THREE.MeshLambertMaterial({color:0x2a2838,wireframe:false}),
+};
+
+// ═══════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════
+function box(w,h,d,mat,x,y,z,rx=0,ry=0,rz=0,castS=true){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+  m.position.set(x,y,z); m.rotation.set(rx,ry,rz);
+  if(castS) m.castShadow=true; m.receiveShadow=true;
+  scene.add(m); return m;
+}
+function cyl(rt,rb,h,seg,mat,x,y,z,rx=0,ry=0,rz=0){
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg),mat);
+  m.position.set(x,y,z); m.rotation.set(rx,ry,rz);
+  m.castShadow=true; m.receiveShadow=true;
+  scene.add(m); return m;
+}
+function sphere(r,mat,x,y,z){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(r,28,28),mat);
+  m.position.set(x,y,z); m.castShadow=true; scene.add(m); return m;
+}
+function addTo(parent,mesh){parent.add(mesh);return mesh;}
+
+// ═══════════════════════════════════════════════════════════
+//  FLOOR GRID
+// ═══════════════════════════════════════════════════════════
+const floorGeo = new THREE.PlaneGeometry(80,30,40,15);
+const floor = new THREE.Mesh(floorGeo, M.floor);
+floor.rotation.x=-Math.PI/2; floor.position.y=-0.02; floor.receiveShadow=true;
+scene.add(floor);
+const grid = new THREE.GridHelper(80,40,0x3a3650,0x2a2838);
+grid.position.y=0.01; scene.add(grid);
+
+// ═══════════════════════════════════════════════════════════
+//  1. PLANO INCLINADO 1   x≈-14
+// ═══════════════════════════════════════════════════════════
+const R1 = {
+  baseH: 2.0,
+  baseL: 5.0,
+  depth: 1.6,
+};
+R1.angle = Math.atan2(R1.baseH, R1.baseL);
+const r1HypoLen = Math.sqrt(R1.baseH**2 + R1.baseL**2);
+const r1cx = -14.5, r1cy = 1.0, r1cz = 0;
+
+box(0.25, R1.baseH*2, R1.depth, M.dwood, r1cx-R1.baseL/2, R1.baseH, r1cz);
+box(r1HypoLen+0.1, 0.22, R1.depth, M.wood,
+  r1cx, R1.baseH, r1cz, 0, 0, -R1.angle);
+box(R1.baseL+0.3, 0.18, R1.depth, M.dwood, r1cx, 0.09, r1cz);
+box(r1HypoLen+0.1, 0.08, R1.depth+0.05, M.blue,
+  r1cx, R1.baseH+0.12, r1cz, 0, 0, -R1.angle);
+box(0.25, 0.18, R1.depth, M.dwood, r1cx+R1.baseL/2, 0.09, r1cz);
+
+// ═══════════════════════════════════════════════════════════
+//  2. PALANCA   x≈-8
+// ═══════════════════════════════════════════════════════════
+const levX = -8.5;
+const fulcrum = new THREE.Group();
+scene.add(fulcrum);
+fulcrum.position.set(levX, 0, 0);
+const coneM=new THREE.Mesh(new THREE.ConeGeometry(0.45,1.1,4),M.dwood);
+coneM.position.set(0,0.55,0); coneM.rotation.y=Math.PI/4; coneM.castShadow=true;
+fulcrum.add(coneM);
+const baseRect=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.18,1.2),M.dwood);
+baseRect.position.set(0,0.09,0); baseRect.castShadow=true; fulcrum.add(baseRect);
+
+const leverGroup = new THREE.Group();
+leverGroup.position.set(levX, 1.18, 0);
+scene.add(leverGroup);
+const leverArm = new THREE.Mesh(new THREE.BoxGeometry(7.0,0.22,0.5), M.plank);
+leverArm.position.set(0.9, 0, 0); leverArm.castShadow=true; leverGroup.add(leverArm);
+const levStrip=new THREE.Mesh(new THREE.BoxGeometry(7.0,0.1,0.55),M.red);
+levStrip.position.set(0.9,0.12,0); leverGroup.add(levStrip);
+const leverBallL = new THREE.Mesh(new THREE.SphereGeometry(0.32,20,20),M.ball2);
+leverBallL.position.set(-2.65,0.32,0); leverBallL.castShadow=true; leverGroup.add(leverBallL);
+let leverAngle = 0;
+
+// ═══════════════════════════════════════════════════════════
+//  3. POLEA   x≈-3
+// ═══════════════════════════════════════════════════════════
+const polX=-3.0;
+box(0.28,5.5,0.28,M.dwood,polX,2.75,0);
+box(1.2,0.22,0.22,M.dwood,polX,5.6,0);
+const pulleyWheel = cyl(0.75,0.75,0.22,32,M.green,polX,5.72,0,Math.PI/2,0,0);
+cyl(0.08,0.08,1.4,8,new THREE.MeshLambertMaterial({color:0xf7d060}),polX,5.72,0,Math.PI/2,0,0);
+box(2.0,0.18,1.4,M.dwood,polX,0.09,0);
+const ropeL = box(0.07,4.5,0.07,M.rope,polX-0.38,3.0,0);
+const pulleyPlatform = new THREE.Group();
+scene.add(pulleyPlatform);
+pulleyPlatform.position.set(polX-0.38, 1.1, 0);
+const platBoard=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.18,0.9),M.wood);
+platBoard.castShadow=true; pulleyPlatform.add(platBoard);
+const platStrip=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.08,0.95),M.green);
+platStrip.position.y=0.11; pulleyPlatform.add(platStrip);
+const ropeR = box(0.07,4.5,0.07,M.rope,polX+0.38,3.0,0);
+const counterWeight=new THREE.Group();
+scene.add(counterWeight);
+counterWeight.position.set(polX+0.38,1.6,0);
+const cwBox=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.55,0.55),new THREE.MeshLambertMaterial({color:0x667788}));
+cwBox.castShadow=true; counterWeight.add(cwBox);
+
+let pulleyPlatformY = 1.1;
+
+// ═══════════════════════════════════════════════════════════
+//  4. RUEDA Y EJE   x≈3.5
+// ═══════════════════════════════════════════════════════════
+const cartX = 3.5;
+const cartGroup = new THREE.Group();
+scene.add(cartGroup);
+cartGroup.position.set(cartX, 0.35, 0);
+const cartPlatform=new THREE.Mesh(new THREE.BoxGeometry(2.8,0.18,1.6),M.wood);
+cartPlatform.castShadow=true; cartGroup.add(cartPlatform);
+const cartStrip=new THREE.Mesh(new THREE.BoxGeometry(2.8,0.08,1.65),M.yellow);
+cartStrip.position.y=0.1; cartGroup.add(cartStrip);
+[[-1.0,0.8],[-1.0,-0.8],[1.0,0.8],[1.0,-0.8]].forEach(([wx,wz])=>{
+  const rim=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.36,0.18,24),M.wheel);
+  rim.rotation.z=Math.PI/2; rim.position.set(wx,-0.18,wz); rim.castShadow=true; cartGroup.add(rim);
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.26,8),
+    new THREE.MeshLambertMaterial({color:0x888888}));
+  hub.rotation.z=Math.PI/2; hub.position.set(wx,-0.18,wz); cartGroup.add(hub);
+});
+[-0.8,0.8].forEach(()=>{
+  const axle=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,2.2,8),
+    new THREE.MeshLambertMaterial({color:0xf7d060}));
+  axle.rotation.z=Math.PI/2; axle.position.set(0,-0.18,0); cartGroup.add(axle);
+});
+
+const cartBall = sphere(0.34, M.ball, cartX, 0.88, 0);
+
+// ═══════════════════════════════════════════════════════════
+//  5. PLANO INCLINADO 2   x≈10
+// ═══════════════════════════════════════════════════════════
+const R2 = {
+  baseH: 1.6,
+  baseL: 4.2,
+  depth: 1.6,
+};
+R2.angle = Math.atan2(R2.baseH, R2.baseL);
+const r2HypoLen = Math.sqrt(R2.baseH**2 + R2.baseL**2);
+const r2cx=10.2, r2cy=R2.baseH/2, r2cz=0;
+
+// Plano inclinado 2 INVERTIDO: poste alto a la IZQUIERDA (igual que plano 1)
+box(0.25, R2.baseH*2, R2.depth, M.dwood, r2cx-R2.baseL/2, R2.baseH, r2cz);
+box(r2HypoLen+0.1, 0.22, R2.depth, M.wood,
+  r2cx, R2.baseH, r2cz, 0, 0, -R2.angle);
+box(R2.baseL+0.3, 0.18, R2.depth, M.dwood, r2cx, 0.09, r2cz);
+box(r2HypoLen+0.1, 0.08, R2.depth+0.05, M.blue,
+  r2cx, R2.baseH+0.12, r2cz, 0, 0, -R2.angle);
+box(0.25, 0.18, R2.depth, M.dwood, r2cx+R2.baseL/2, 0.09, r2cz);
+
+// Bola estática en la parte ALTA del plano (izquierda)
+const ramp2Ball = sphere(0.32, M.ball2, r2cx-R2.baseL/2+0.4, R2.baseH*2+0.32, r2cz);
+
+// ═══════════════════════════════════════════════════════════
+//  6. CATAPULTA   x≈16
+// ═══════════════════════════════════════════════════════════
+const catX=16.0;
+box(2.8,0.18,1.8,M.dwood,catX,0.09,0);
+const catMat2=new THREE.MeshLambertMaterial({color:0xb87030});
+[[-0.5,0.5],[0.5,-0.5]].forEach(([z1,z2])=>{
+  box(0.16,2.6,0.28,catMat2,catX-0.5,1.2,z1,0,0,0.38);
+  box(0.16,2.6,0.28,catMat2,catX+0.5,1.2,z1,0,0,-0.38);
+  box(0.16,2.6,0.28,catMat2,catX-0.5,1.2,z2,0,0,0.38);
+  box(0.16,2.6,0.28,catMat2,catX+0.5,1.2,z2,0,0,-0.38);
+});
+box(0.18,0.18,2.0,M.dwood,catX,2.3,0);
+
+const catArmGroup = new THREE.Group();
+catArmGroup.position.set(catX,2.3,0);
+scene.add(catArmGroup);
+const catArm=new THREE.Mesh(new THREE.BoxGeometry(4.2,0.18,0.28),M.plank);
+catArm.position.set(0.6,0,0); catArm.castShadow=true; catArmGroup.add(catArm);
+const catCup=new THREE.Mesh(new THREE.SphereGeometry(0.32,16,16,0,Math.PI*2,0,Math.PI/2),M.green);
+catCup.position.set(2.8,0.16,0); catCup.castShadow=true; catArmGroup.add(catCup);
+const catCW=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5),
+  new THREE.MeshLambertMaterial({color:0x556677}));
+catCW.position.set(-1.4,0.3,0); catCW.castShadow=true; catArmGroup.add(catCW);
+box(2.8,0.08,1.85,M.purple,catX,0.2,0);
+
+let catArmAngle = -0.9;
+catArmGroup.rotation.z = catArmAngle;
+
+const catapultBall = sphere(0.3, M.ball, catX+2.8*Math.cos(-catArmAngle), 2.3+2.8*Math.sin(-catArmAngle)+0.3, 0);
+
+// ═══════════════════════════════════════════════════════════
+//  7. CANASTA / ARO   x≈22
+// ═══════════════════════════════════════════════════════════
+const baskX=22.0;
+box(0.18,5.5,0.18,M.dwood,baskX,2.75,0);
+box(2.4,1.9,0.1,new THREE.MeshLambertMaterial({color:0xd8d0b8}),baskX,4.7,0.1);
+box(2.4,0.1,0.1,M.dwood,baskX,3.75,0.1);
+box(2.4,0.1,0.1,M.dwood,baskX,5.65,0.1);
+box(0.1,1.9,0.1,M.dwood,baskX-1.2,4.7,0.1);
+box(0.1,1.9,0.1,M.dwood,baskX+1.2,4.7,0.1);
+box(1.0,0.12,0.12,M.dwood,baskX-0.6,4.3,-0.12);
+const rimGeo=new THREE.TorusGeometry(0.72,0.07,12,40);
+const rimMesh=new THREE.Mesh(rimGeo,M.orange);
+rimMesh.rotation.x=Math.PI/2; rimMesh.position.set(baskX-0.5,3.9,-0.6);
+rimMesh.castShadow=true; scene.add(rimMesh);
+for(let i=0;i<12;i++){
+  const a=i/12*Math.PI*2;
+  const nx=baskX-0.5+0.68*Math.cos(a), nz=-0.6+0.68*Math.sin(a);
+  box(0.04,0.65,0.04,M.rope,nx,3.57,nz);
+}
+cyl(0.28,0.28,0.05,20,M.rope,baskX-0.5,3.24,-0.6,Math.PI/2,0,0);
+
+// ═══════════════════════════════════════════════════════════
+//  MAIN BALL - estática en la cima del plano inclinado 1
+// ═══════════════════════════════════════════════════════════
+const mainBall = sphere(0.36, M.ball, r1cx-R1.baseL/2+0.3, R1.baseH*2+0.36, 0);
+
+// Bola estática sobre la palanca
+const leverBallStatic = sphere(0.32, M.ball2, r1cx+R1.baseL/2+0.3, 0.36, 0);
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER LOOP (sin animación)
+// ═══════════════════════════════════════════════════════════
+function animate(){
+  requestAnimationFrame(animate);
+  renderer.render(scene,camera);
+}
+animate();
+// ═══════════════════════════════════════════════════════════
+//  ORBIT CONTROLS (cámara libre)
+// ═══════════════════════════════════════════════════════════
+let isDragging=false, prevMx=0, prevMy=0;
+
+canvas.addEventListener('mousedown',e=>{isDragging=true;prevMx=e.clientX;prevMy=e.clientY;canvas.style.cursor='grabbing';});
+window.addEventListener('mouseup',()=>{isDragging=false;canvas.style.cursor='default';});
+window.addEventListener('mousemove',e=>{
+  if(!isDragging)return;
+  theta-=(e.clientX-prevMx)*0.007;
+  phi=Math.max(0.12,Math.min(1.45,phi-(e.clientY-prevMy)*0.006));
+  prevMx=e.clientX; prevMy=e.clientY;
+  updateCamera();
+});
+canvas.addEventListener('wheel',e=>{
+  radius=Math.max(8,Math.min(55,radius+e.deltaY*0.04));
+  updateCamera(); e.preventDefault();
+},{passive:false});
+canvas.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){isDragging=true;prevMx=e.touches[0].clientX;prevMy=e.touches[0].clientY;}
+},{passive:true});
+canvas.addEventListener('touchend',()=>isDragging=false,{passive:true});
+canvas.addEventListener('touchmove',e=>{
+  if(!isDragging||e.touches.length!==1)return;
+  theta-=(e.touches[0].clientX-prevMx)*0.007;
+  phi=Math.max(0.12,Math.min(1.45,phi-(e.touches[0].clientY-prevMy)*0.006));
+  prevMx=e.touches[0].clientX; prevMy=e.touches[0].clientY;
+  updateCamera();
+},{passive:true});
+
+function resetCamera(){
+  theta=-0.4;phi=0.42;radius=30;
+  camTarget.set(4,2,0);
+  updateCamera();
+}
+
+</script>
+</body>
+</html>
