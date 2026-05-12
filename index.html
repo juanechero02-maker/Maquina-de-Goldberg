@@ -33,7 +33,7 @@
   <span class="tag" style="background:#1e3a5f;color:#6eb3f7">① Plano inclinado</span>
   <span class="tag" style="background:#5f1e1e;color:#f76e6e">② Palanca</span>
   <span class="tag" style="background:#1e4a2e;color:#6ef7a0">③ Polea</span>
-  <span class="tag" style="background:#4a3a00;color:#f7d06e">④ Rueda y eje</span>
+  <span class="tag" style="background:#4a3a00;color:#f7d06e">④ Tornillo helicoidal</span>
   <span class="tag" style="background:#1e3a5f;color:#6eb3f7">⑤ Plano inclinado</span>
   <span class="tag" style="background:#3a1e5f;color:#c06ef7">⑥ Catapulta</span>
   <span class="tag" style="background:#3a2a10;color:#f7a06e">🏀 Canasta</span>
@@ -232,30 +232,71 @@ cwBox.castShadow=true; counterWeight.add(cwBox);
 let pulleyPlatformY = 1.1;
 
 // ═══════════════════════════════════════════════════════════
-//  4. RUEDA Y EJE   x≈3.5
+//  4. TORNILLO HELICOIDAL (tobogán en espiral)   x≈3.5
 // ═══════════════════════════════════════════════════════════
-const cartX = 3.5;
-const cartGroup = new THREE.Group();
-scene.add(cartGroup);
-cartGroup.position.set(cartX, 0.35, 0);
-const cartPlatform=new THREE.Mesh(new THREE.BoxGeometry(2.8,0.18,1.6),M.wood);
-cartPlatform.castShadow=true; cartGroup.add(cartPlatform);
-const cartStrip=new THREE.Mesh(new THREE.BoxGeometry(2.8,0.08,1.65),M.yellow);
-cartStrip.position.y=0.1; cartGroup.add(cartStrip);
-[[-1.0,0.8],[-1.0,-0.8],[1.0,0.8],[1.0,-0.8]].forEach(([wx,wz])=>{
-  const rim=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.36,0.18,24),M.wheel);
-  rim.rotation.z=Math.PI/2; rim.position.set(wx,-0.18,wz); rim.castShadow=true; cartGroup.add(rim);
-  const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.26,8),
-    new THREE.MeshLambertMaterial({color:0x888888}));
-  hub.rotation.z=Math.PI/2; hub.position.set(wx,-0.18,wz); cartGroup.add(hub);
-});
-[-0.8,0.8].forEach(()=>{
-  const axle=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,2.2,8),
-    new THREE.MeshLambertMaterial({color:0xf7d060}));
-  axle.rotation.z=Math.PI/2; axle.position.set(0,-0.18,0); cartGroup.add(axle);
-});
+const screwX = 3.5;
+const SCREW_TURNS  = 3.5;
+const SCREW_RADIUS = 0.85;
+const SCREW_TOP_Y  = 3.6;
+const SCREW_BOT_Y  = 0.36;
+const SCREW_SEGS   = 120;
 
-const cartBall = sphere(0.34, M.ball, cartX, 0.88, 0);
+// Eje central
+cyl(0.07, 0.07, (SCREW_TOP_Y - SCREW_BOT_Y) + 0.5,
+    12, M.dwood, screwX, (SCREW_TOP_Y + SCREW_BOT_Y) / 2, 0);
+// Base
+cyl(0.45, 0.6, 0.22, 16, M.dwood, screwX, 0.11, 0);
+// Tope superior
+cyl(0.18, 0.18, 0.28, 12, M.yellow, screwX, SCREW_TOP_Y + 0.14, 0);
+
+// Puntos de la hélice
+const helixPoints = [];
+for (let i = 0; i <= SCREW_SEGS; i++) {
+  const t = i / SCREW_SEGS;
+  const angle = t * SCREW_TURNS * Math.PI * 2;
+  helixPoints.push(new THREE.Vector3(
+    screwX + SCREW_RADIUS * Math.cos(angle),
+    SCREW_TOP_Y - t * (SCREW_TOP_Y - SCREW_BOT_Y),
+    SCREW_RADIUS * Math.sin(angle)
+  ));
+}
+
+// Rampa helicoidal – segmentos de caja orientados tangencialmente
+const rampMat  = new THREE.MeshLambertMaterial({color:0xd4a060});
+const railMat  = new THREE.MeshLambertMaterial({color:0xf7c030});
+for (let i = 0; i < SCREW_SEGS; i++) {
+  const p0 = helixPoints[i], p1 = helixPoints[i+1];
+  const mid = new THREE.Vector3().addVectors(p0,p1).multiplyScalar(0.5);
+  const dir = new THREE.Vector3().subVectors(p1,p0);
+  const len = dir.length();
+  const quat = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(1,0,0), dir.clone().normalize());
+
+  // Tablilla de rampa
+  const seg = new THREE.Mesh(new THREE.BoxGeometry(len+0.01, 0.07, 0.42), rampMat);
+  seg.quaternion.copy(quat);
+  seg.position.copy(mid);
+  seg.castShadow = true; seg.receiveShadow = true;
+  scene.add(seg);
+
+  // Barandilla exterior cada 3 segmentos
+  if (i % 3 === 0) {
+    const t = i / SCREW_SEGS;
+    const angle = t * SCREW_TURNS * Math.PI * 2;
+    const outDir = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).multiplyScalar(0.2);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(len*3.2, 0.05, 0.05), railMat);
+    rail.quaternion.copy(quat);
+    rail.position.copy(mid).add(outDir);
+    rail.position.y += 0.12;
+    rail.castShadow = true;
+    scene.add(rail);
+  }
+}
+
+// Canica en la entrada del tornillo
+const cartBall = sphere(0.28, M.ball, helixPoints[0].x, helixPoints[0].y + 0.28, helixPoints[0].z);
+let screwT = 0;
+let screwRunning = false;
 
 // ═══════════════════════════════════════════════════════════
 //  5. PLANO INCLINADO 2   x≈10
