@@ -20,12 +20,14 @@
   .dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);transition:background .3s;}
   .dot.active{background:#9060d0;}
   .dot.done{background:#3a9e5f;}
+  #layout-hint{position:fixed;top:50px;right:10px;z-index:10;font-size:10px;color:rgba(255,255,255,0.3);text-align:right;line-height:1.6;}
 </style>
 </head>
 <body>
 <div id="ui">
   <h1>🎯 MÁQUINA DE GOLDBERG</h1>
   <button onclick="resetCamera()">↺ Reset cámara</button>
+  <button onclick="downloadPage()" style="background:rgba(60,120,60,0.4);border-color:#3a7a3a;">⬇ Descargar HTML</button>
   <span style="font-size:11px;color:rgba(255,255,255,0.35);margin-left:4px">Arrastra · Scroll para zoom · Explora las máquinas simples</span>
 </div>
 
@@ -39,11 +41,13 @@
   <span class="tag" style="background:#3a2a10;color:#f7a06e">🏀 Canasta</span>
 </div>
 
-
+<div id="layout-hint">
+  FILA TRASERA (z−): ① → ② → ③<br>
+  FILA DELANTERA (z+): ④ → ⑤ → ⑥ → 🏀
+</div>
 
 <canvas id="c"></canvas>
 
-<!-- FIX: Using jsDelivr CDN (more reliable than cdnjs for r134) -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════
@@ -65,15 +69,17 @@ window.addEventListener('resize',()=>{
 });
 
 // ═══════════════════════════════════════════════════════════
-//  SCENE & CAMERA
+//  SCENE & CAMERA  — centrado en el layout en U
 // ═══════════════════════════════════════════════════════════
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x12101e);
-scene.fog = new THREE.FogExp2(0x12101e, 0.018);
+scene.fog = new THREE.FogExp2(0x12101e, 0.016);
 
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 300);
-let theta=-0.4, phi=0.42, radius=30;
-const camTarget = new THREE.Vector3(4,2,0);
+// Vista cenital ligeramente inclinada sobre el layout en U
+let theta = 0.0, phi = 0.52, radius = 32;
+const camTarget = new THREE.Vector3(-1, 2, 0);
+
 function updateCamera(){
   camera.position.x = camTarget.x + radius * Math.sin(phi) * Math.sin(theta);
   camera.position.y = camTarget.y + radius * Math.cos(phi);
@@ -84,29 +90,26 @@ updateCamera();
 
 // ═══════════════════════════════════════════════════════════
 //  LIGHTS
-//  FIX: Never use Object.assign on Three.js light objects.
-//       Always call .position.set() explicitly after creation.
 // ═══════════════════════════════════════════════════════════
 scene.add(new THREE.AmbientLight(0x8890bb, 0.55));
 
 const sun = new THREE.DirectionalLight(0xfffbe8, 1.1);
-sun.position.set(12, 22, 14);
+sun.position.set(6, 22, 8);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left   = -35;
-sun.shadow.camera.right  =  35;
+sun.shadow.camera.left   = -22;
+sun.shadow.camera.right  =  16;
 sun.shadow.camera.top    =  25;
 sun.shadow.camera.bottom =  -8;
 sun.shadow.bias = -0.001;
 scene.add(sun);
 
-// FIX: create lights then call .position.set() – never Object.assign
 const fillLight = new THREE.DirectionalLight(0x6688cc, 0.3);
 fillLight.position.set(-8, 6, -6);
 scene.add(fillLight);
 
 const pointLight = new THREE.PointLight(0xf0a050, 0.4, 20);
-pointLight.position.set(-14, 5, 2);
+pointLight.position.set(-8, 5, 2);
 scene.add(pointLight);
 
 // ═══════════════════════════════════════════════════════════
@@ -149,20 +152,34 @@ function sphere(r,mat,x,y,z){
   const m=new THREE.Mesh(new THREE.SphereGeometry(r,28,28),mat);
   m.position.set(x,y,z); m.castShadow=true; scene.add(m); return m;
 }
-function addTo(parent,mesh){parent.add(mesh);return mesh;}
 
 // ═══════════════════════════════════════════════════════════
-//  FLOOR GRID
+//  FLOOR GRID — cubre el layout en U
+//  X: -14 … +11   Z: -6 … +6
 // ═══════════════════════════════════════════════════════════
-const floorGeo = new THREE.PlaneGeometry(80,30,40,15);
+const floorGeo = new THREE.PlaneGeometry(32, 16, 32, 16);
 const floor = new THREE.Mesh(floorGeo, M.floor);
-floor.rotation.x=-Math.PI/2; floor.position.y=-0.02; floor.receiveShadow=true;
+floor.rotation.x = -Math.PI/2;
+floor.position.set(-1.5, -0.02, 0);
+floor.receiveShadow = true;
 scene.add(floor);
-const grid = new THREE.GridHelper(80,40,0x3a3650,0x2a2838);
-grid.position.y=0.01; scene.add(grid);
+const grid = new THREE.GridHelper(32, 32, 0x3a3650, 0x2a2838);
+grid.position.set(-1.5, 0.01, 0);
+scene.add(grid);
+
+// ── Líneas guía que muestran el recorrido en U ──────────────
+const arrowMat = new THREE.MeshLambertMaterial({color:0x4a3a6a});
+// Fila trasera (z = -3.5): flecha →
+box(9.0, 0.05, 0.08, arrowMat, -4.5, 0.03, -3.5);
+// Conexión entre filas (x = 8.5):  flecha ↓
+box(0.08, 0.05, 6.5, arrowMat, 8.5, 0.03, 0);
+// Fila delantera (z = +3.5): flecha ←
+box(17.0, 0.05, 0.08, arrowMat, -0.5, 0.03, 3.5);
+
 
 // ═══════════════════════════════════════════════════════════
-//  1. PLANO INCLINADO 1   x≈-14
+//  1. PLANO INCLINADO 1   — FILA TRASERA, extremo izquierdo
+//     Centro: x ≈ -10,  z = -3.5
 // ═══════════════════════════════════════════════════════════
 const R1 = {
   baseH: 2.0,
@@ -171,7 +188,7 @@ const R1 = {
 };
 R1.angle = Math.atan2(R1.baseH, R1.baseL);
 const r1HypoLen = Math.sqrt(R1.baseH**2 + R1.baseL**2);
-const r1cx = -14.5, r1cy = 1.0, r1cz = 0;
+const r1cx = -10.0, r1cz = -3.5;
 
 box(0.25, R1.baseH*2, R1.depth, M.dwood, r1cx-R1.baseL/2, R1.baseH, r1cz);
 box(r1HypoLen+0.1, 0.22, R1.depth, M.wood,
@@ -182,12 +199,13 @@ box(r1HypoLen+0.1, 0.08, R1.depth+0.05, M.blue,
 box(0.25, 0.18, R1.depth, M.dwood, r1cx+R1.baseL/2, 0.09, r1cz);
 
 // ═══════════════════════════════════════════════════════════
-//  2. PALANCA   x≈-8
+//  2. PALANCA   — FILA TRASERA, centro
+//     Centro fulcro: x ≈ -3.5,  z = -3.5
 // ═══════════════════════════════════════════════════════════
-const levX = -8.5;
+const levX = -3.5, levZ = -3.5;
 const fulcrum = new THREE.Group();
 scene.add(fulcrum);
-fulcrum.position.set(levX, 0, 0);
+fulcrum.position.set(levX, 0, levZ);
 const coneM=new THREE.Mesh(new THREE.ConeGeometry(0.45,1.1,4),M.dwood);
 coneM.position.set(0,0.55,0); coneM.rotation.y=Math.PI/4; coneM.castShadow=true;
 fulcrum.add(coneM);
@@ -195,7 +213,7 @@ const baseRect=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.18,1.2),M.dwood);
 baseRect.position.set(0,0.09,0); baseRect.castShadow=true; fulcrum.add(baseRect);
 
 const leverGroup = new THREE.Group();
-leverGroup.position.set(levX, 1.18, 0);
+leverGroup.position.set(levX, 1.18, levZ);
 scene.add(leverGroup);
 const leverArm = new THREE.Mesh(new THREE.BoxGeometry(7.0,0.22,0.5), M.plank);
 leverArm.position.set(0.9, 0, 0); leverArm.castShadow=true; leverGroup.add(leverArm);
@@ -206,35 +224,38 @@ leverBallL.position.set(-2.65,0.32,0); leverBallL.castShadow=true; leverGroup.ad
 let leverAngle = 0;
 
 // ═══════════════════════════════════════════════════════════
-//  3. POLEA   x≈-3
+//  3. POLEA   — FILA TRASERA, extremo derecho
+//     Centro: x ≈ 4,  z = -3.5
 // ═══════════════════════════════════════════════════════════
-const polX=-3.0;
-box(0.28,5.5,0.28,M.dwood,polX,2.75,0);
-box(1.2,0.22,0.22,M.dwood,polX,5.6,0);
-const pulleyWheel = cyl(0.75,0.75,0.22,32,M.green,polX,5.72,0,Math.PI/2,0,0);
-cyl(0.08,0.08,1.4,8,new THREE.MeshLambertMaterial({color:0xf7d060}),polX,5.72,0,Math.PI/2,0,0);
-box(2.0,0.18,1.4,M.dwood,polX,0.09,0);
-const ropeL = box(0.07,4.5,0.07,M.rope,polX-0.38,3.0,0);
+const polX = 4.0, polZ = -3.5;
+box(0.28,5.5,0.28,M.dwood, polX,2.75, polZ);
+box(1.2,0.22,0.22,M.dwood, polX,5.6,  polZ);
+const pulleyWheel = cyl(0.75,0.75,0.22,32,M.green, polX,5.72, polZ, Math.PI/2,0,0);
+cyl(0.08,0.08,1.4,8,new THREE.MeshLambertMaterial({color:0xf7d060}), polX,5.72, polZ, Math.PI/2,0,0);
+box(2.0,0.18,1.4,M.dwood, polX,0.09, polZ);
+const ropeL = box(0.07,4.5,0.07,M.rope, polX-0.38,3.0, polZ);
 const pulleyPlatform = new THREE.Group();
 scene.add(pulleyPlatform);
-pulleyPlatform.position.set(polX-0.38, 1.1, 0);
+pulleyPlatform.position.set(polX-0.38, 1.1, polZ);
 const platBoard=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.18,0.9),M.wood);
 platBoard.castShadow=true; pulleyPlatform.add(platBoard);
 const platStrip=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.08,0.95),M.green);
 platStrip.position.y=0.11; pulleyPlatform.add(platStrip);
-const ropeR = box(0.07,4.5,0.07,M.rope,polX+0.38,3.0,0);
+const ropeR = box(0.07,4.5,0.07,M.rope, polX+0.38,3.0, polZ);
 const counterWeight=new THREE.Group();
 scene.add(counterWeight);
-counterWeight.position.set(polX+0.38,1.6,0);
+counterWeight.position.set(polX+0.38,1.6, polZ);
 const cwBox=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.55,0.55),new THREE.MeshLambertMaterial({color:0x667788}));
 cwBox.castShadow=true; counterWeight.add(cwBox);
 
 let pulleyPlatformY = 1.1;
 
 // ═══════════════════════════════════════════════════════════
-//  4. TORNILLO HELICOIDAL (tobogán en espiral)   x≈3.5
+//  4. TORNILLO HELICOIDAL — FILA DELANTERA, extremo derecho
+//     Centro: x ≈ 8,  z = +3.5
 // ═══════════════════════════════════════════════════════════
-const screwX = 3.5;
+// Tornillo en el punto medio entre la polea (4, -3.5) y el plano inclinado 2 (1.5, +3.5)
+const screwX = 2.75, screwZ = 0.0;
 const SCREW_TURNS  = 3.5;
 const SCREW_RADIUS = 0.85;
 const SCREW_TOP_Y  = 3.6;
@@ -243,13 +264,13 @@ const SCREW_SEGS   = 120;
 
 // Eje central
 cyl(0.07, 0.07, (SCREW_TOP_Y - SCREW_BOT_Y) + 0.5,
-    12, M.dwood, screwX, (SCREW_TOP_Y + SCREW_BOT_Y) / 2, 0);
+    12, M.dwood, screwX, (SCREW_TOP_Y + SCREW_BOT_Y) / 2, screwZ);
 // Base
-cyl(0.45, 0.6, 0.22, 16, M.dwood, screwX, 0.11, 0);
+cyl(0.45, 0.6, 0.22, 16, M.dwood, screwX, 0.11, screwZ);
 // Tope superior
-cyl(0.18, 0.18, 0.28, 12, M.yellow, screwX, SCREW_TOP_Y + 0.14, 0);
+cyl(0.18, 0.18, 0.28, 12, M.yellow, screwX, SCREW_TOP_Y + 0.14, screwZ);
 
-// Puntos de la hélice
+// Puntos de la hélice (ahora centrados en screwX, screwZ)
 const helixPoints = [];
 for (let i = 0; i <= SCREW_SEGS; i++) {
   const t = i / SCREW_SEGS;
@@ -257,11 +278,11 @@ for (let i = 0; i <= SCREW_SEGS; i++) {
   helixPoints.push(new THREE.Vector3(
     screwX + SCREW_RADIUS * Math.cos(angle),
     SCREW_TOP_Y - t * (SCREW_TOP_Y - SCREW_BOT_Y),
-    SCREW_RADIUS * Math.sin(angle)
+    screwZ + SCREW_RADIUS * Math.sin(angle)   // ← Z desplazado
   ));
 }
 
-// Rampa helicoidal – segmentos de caja orientados tangencialmente
+// Rampa helicoidal
 const rampMat  = new THREE.MeshLambertMaterial({color:0xd4a060});
 const railMat  = new THREE.MeshLambertMaterial({color:0xf7c030});
 for (let i = 0; i < SCREW_SEGS; i++) {
@@ -272,14 +293,12 @@ for (let i = 0; i < SCREW_SEGS; i++) {
   const quat = new THREE.Quaternion().setFromUnitVectors(
     new THREE.Vector3(1,0,0), dir.clone().normalize());
 
-  // Tablilla de rampa
   const seg = new THREE.Mesh(new THREE.BoxGeometry(len+0.01, 0.07, 0.42), rampMat);
   seg.quaternion.copy(quat);
   seg.position.copy(mid);
   seg.castShadow = true; seg.receiveShadow = true;
   scene.add(seg);
 
-  // Barandilla exterior cada 3 segmentos
   if (i % 3 === 0) {
     const t = i / SCREW_SEGS;
     const angle = t * SCREW_TURNS * Math.PI * 2;
@@ -299,7 +318,8 @@ let screwT = 0;
 let screwRunning = false;
 
 // ═══════════════════════════════════════════════════════════
-//  5. PLANO INCLINADO 2   x≈10
+//  5. PLANO INCLINADO 2   — FILA DELANTERA, centro
+//     Centro: x ≈ 1.5,  z = +3.5
 // ═══════════════════════════════════════════════════════════
 const R2 = {
   baseH: 1.6,
@@ -308,91 +328,105 @@ const R2 = {
 };
 R2.angle = Math.atan2(R2.baseH, R2.baseL);
 const r2HypoLen = Math.sqrt(R2.baseH**2 + R2.baseL**2);
-const r2cx=10.2, r2cy=R2.baseH/2, r2cz=0;
+const r2cx = 1.5, r2cz = 3.5;
 
-// Plano inclinado 2 INVERTIDO: poste alto a la IZQUIERDA (igual que plano 1)
-box(0.25, R2.baseH*2, R2.depth, M.dwood, r2cx-R2.baseL/2, R2.baseH, r2cz);
+// Poste alto a la DERECHA — rampa desciende hacia la IZQUIERDA (→ catapulta)
+box(0.25, R2.baseH*2, R2.depth, M.dwood, r2cx+R2.baseL/2, R2.baseH, r2cz);
 box(r2HypoLen+0.1, 0.22, R2.depth, M.wood,
-  r2cx, R2.baseH, r2cz, 0, 0, -R2.angle);
+  r2cx, R2.baseH, r2cz, 0, 0, R2.angle);
 box(R2.baseL+0.3, 0.18, R2.depth, M.dwood, r2cx, 0.09, r2cz);
 box(r2HypoLen+0.1, 0.08, R2.depth+0.05, M.blue,
-  r2cx, R2.baseH+0.12, r2cz, 0, 0, -R2.angle);
-box(0.25, 0.18, R2.depth, M.dwood, r2cx+R2.baseL/2, 0.09, r2cz);
+  r2cx, R2.baseH+0.12, r2cz, 0, 0, R2.angle);
+box(0.25, 0.18, R2.depth, M.dwood, r2cx-R2.baseL/2, 0.09, r2cz);
 
-// Bola estática en la parte ALTA del plano (izquierda)
-const ramp2Ball = sphere(0.32, M.ball2, r2cx-R2.baseL/2+0.4, R2.baseH*2+0.32, r2cz);
+// Bola estática en la parte alta del plano 2 (extremo derecho = lado alto)
+const ramp2Ball = sphere(0.32, M.ball2, r2cx+R2.baseL/2-0.4, R2.baseH*2+0.32, r2cz);
 
 // ═══════════════════════════════════════════════════════════
-//  6. CATAPULTA   x≈16
+//  6. CATAPULTA   — FILA DELANTERA, centro-izquierda
+//     Centro: x ≈ -5,  z = +3.5
 // ═══════════════════════════════════════════════════════════
-const catX=16.0;
-box(2.8,0.18,1.8,M.dwood,catX,0.09,0);
+const catX = -5.0, catZ = 3.5;
+box(2.8,0.18,1.8, M.dwood, catX,0.09, catZ);
 const catMat2=new THREE.MeshLambertMaterial({color:0xb87030});
 [[-0.5,0.5],[0.5,-0.5]].forEach(([z1,z2])=>{
-  box(0.16,2.6,0.28,catMat2,catX-0.5,1.2,z1,0,0,0.38);
-  box(0.16,2.6,0.28,catMat2,catX+0.5,1.2,z1,0,0,-0.38);
-  box(0.16,2.6,0.28,catMat2,catX-0.5,1.2,z2,0,0,0.38);
-  box(0.16,2.6,0.28,catMat2,catX+0.5,1.2,z2,0,0,-0.38);
+  box(0.16,2.6,0.28,catMat2, catX-0.5,1.2, catZ+z1, 0,0, 0.38);
+  box(0.16,2.6,0.28,catMat2, catX+0.5,1.2, catZ+z1, 0,0,-0.38);
+  box(0.16,2.6,0.28,catMat2, catX-0.5,1.2, catZ+z2, 0,0, 0.38);
+  box(0.16,2.6,0.28,catMat2, catX+0.5,1.2, catZ+z2, 0,0,-0.38);
 });
-box(0.18,0.18,2.0,M.dwood,catX,2.3,0);
+box(0.18,0.18,2.0, M.dwood, catX,2.3, catZ);
 
 const catArmGroup = new THREE.Group();
-catArmGroup.position.set(catX,2.3,0);
+catArmGroup.position.set(catX, 2.3, catZ);
 scene.add(catArmGroup);
+// Brazo invertido: copa en extremo IZQUIERDO → dispara hacia la CANASTA (x negativo)
 const catArm=new THREE.Mesh(new THREE.BoxGeometry(4.2,0.18,0.28),M.plank);
-catArm.position.set(0.6,0,0); catArm.castShadow=true; catArmGroup.add(catArm);
+catArm.position.set(-0.6,0,0); catArm.castShadow=true; catArmGroup.add(catArm);
 const catCup=new THREE.Mesh(new THREE.SphereGeometry(0.32,16,16,0,Math.PI*2,0,Math.PI/2),M.green);
-catCup.position.set(2.8,0.16,0); catCup.castShadow=true; catArmGroup.add(catCup);
+catCup.position.set(-2.8,0.16,0); catCup.castShadow=true; catArmGroup.add(catCup);  // copa a la IZQUIERDA
 const catCW=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5),
   new THREE.MeshLambertMaterial({color:0x556677}));
-catCW.position.set(-1.4,0.3,0); catCW.castShadow=true; catArmGroup.add(catCW);
-box(2.8,0.08,1.85,M.purple,catX,0.2,0);
+catCW.position.set(1.4,0.3,0); catCW.castShadow=true; catArmGroup.add(catCW);  // contrapeso a la DERECHA
+box(2.8,0.08,1.85, M.purple, catX,0.2, catZ);
 
-let catArmAngle = -0.9;
+// Ángulo +0.9 rad (antihorario) → extremo izquierdo (copa) apunta ABAJO = posición cargada
+let catArmAngle = 0.9;
 catArmGroup.rotation.z = catArmAngle;
 
-const catapultBall = sphere(0.3, M.ball, catX+2.8*Math.cos(-catArmAngle), 2.3+2.8*Math.sin(-catArmAngle)+0.3, 0);
+// Bola cargada en la copa (cerca del suelo, a la izquierda del pivote)
+const catapultBall = sphere(0.3, M.ball,
+  catX - 2.8*Math.cos(catArmAngle),
+  2.3 - 2.8*Math.sin(catArmAngle) + 0.3,
+  catZ);
 
 // ═══════════════════════════════════════════════════════════
-//  7. CANASTA / ARO   x≈22
+//  7. CANASTA / ARO   — FILA DELANTERA, extremo izquierdo
+//     Centro: x ≈ -11,  z = +3.5
 // ═══════════════════════════════════════════════════════════
-const baskX=22.0;
-box(0.18,5.5,0.18,M.dwood,baskX,2.75,0);
-box(2.4,1.9,0.1,new THREE.MeshLambertMaterial({color:0xd8d0b8}),baskX,4.7,0.1);
-box(2.4,0.1,0.1,M.dwood,baskX,3.75,0.1);
-box(2.4,0.1,0.1,M.dwood,baskX,5.65,0.1);
-box(0.1,1.9,0.1,M.dwood,baskX-1.2,4.7,0.1);
-box(0.1,1.9,0.1,M.dwood,baskX+1.2,4.7,0.1);
-box(1.0,0.12,0.12,M.dwood,baskX-0.6,4.3,-0.12);
+const baskX = -11.0, baskZ = 3.5;
+// Tablero girado 90° → enfrenta hacia la DERECHA (+x = dirección de la catapulta)
+box(0.18,5.5,0.18, M.dwood, baskX,2.75, baskZ);
+box(0.1,1.9,2.4, new THREE.MeshLambertMaterial({color:0xd8d0b8}), baskX+0.1,4.7, baskZ);  // panel de fondo
+box(0.1,0.1,2.4, M.dwood, baskX+0.1,3.75, baskZ);   // borde inferior
+box(0.1,0.1,2.4, M.dwood, baskX+0.1,5.65, baskZ);   // borde superior
+box(0.1,1.9,0.1, M.dwood, baskX+0.1,4.7, baskZ-1.2); // borde trasero
+box(0.1,1.9,0.1, M.dwood, baskX+0.1,4.7, baskZ+1.2); // borde delantero
+// Brazo soporte apuntando hacia la catapulta (+x)
+box(1.0,0.12,0.12, M.dwood, baskX+0.6,4.3, baskZ);
 const rimGeo=new THREE.TorusGeometry(0.72,0.07,12,40);
 const rimMesh=new THREE.Mesh(rimGeo,M.orange);
-rimMesh.rotation.x=Math.PI/2; rimMesh.position.set(baskX-0.5,3.9,-0.6);
+rimMesh.rotation.x=Math.PI/2;
+// Aro a la DERECHA del poste, enfrentando la catapulta
+rimMesh.position.set(baskX+1.2, 3.9, baskZ);
 rimMesh.castShadow=true; scene.add(rimMesh);
 for(let i=0;i<12;i++){
   const a=i/12*Math.PI*2;
-  const nx=baskX-0.5+0.68*Math.cos(a), nz=-0.6+0.68*Math.sin(a);
+  const nx=baskX+1.2+0.68*Math.cos(a);
+  const nz=baskZ+0.68*Math.sin(a);
   box(0.04,0.65,0.04,M.rope,nx,3.57,nz);
 }
-cyl(0.28,0.28,0.05,20,M.rope,baskX-0.5,3.24,-0.6,Math.PI/2,0,0);
+cyl(0.28,0.28,0.05,20,M.rope, baskX+1.2,3.24, baskZ, Math.PI/2,0,0);
 
 // ═══════════════════════════════════════════════════════════
-//  MAIN BALL - estática en la cima del plano inclinado 1
+//  BOLAS ESTÁTICAS
 // ═══════════════════════════════════════════════════════════
-const mainBall = sphere(0.36, M.ball, r1cx-R1.baseL/2+0.3, R1.baseH*2+0.36, 0);
-
-// Bola estática sobre la palanca
-const leverBallStatic = sphere(0.32, M.ball2, r1cx+R1.baseL/2+0.3, 0.36, 0);
+// Bola principal — cima del plano inclinado 1
+const mainBall = sphere(0.36, M.ball, r1cx-R1.baseL/2+0.3, R1.baseH*2+0.36, r1cz);
+// Bola al pie de PI1 (cerca de la palanca)
+const leverBallStatic = sphere(0.32, M.ball2, r1cx+R1.baseL/2+0.3, 0.36, r1cz);
 
 // ═══════════════════════════════════════════════════════════
-//  RENDER LOOP (sin animación)
+//  RENDER LOOP
 // ═══════════════════════════════════════════════════════════
 function animate(){
   requestAnimationFrame(animate);
-  renderer.render(scene,camera);
+  renderer.render(scene, camera);
 }
 animate();
+
 // ═══════════════════════════════════════════════════════════
-//  ORBIT CONTROLS (cámara libre)
+//  ORBIT CONTROLS
 // ═══════════════════════════════════════════════════════════
 let isDragging=false, prevMx=0, prevMy=0;
 
@@ -406,7 +440,7 @@ window.addEventListener('mousemove',e=>{
   updateCamera();
 });
 canvas.addEventListener('wheel',e=>{
-  radius=Math.max(8,Math.min(55,radius+e.deltaY*0.04));
+  radius=Math.max(8,Math.min(60,radius+e.deltaY*0.04));
   updateCamera(); e.preventDefault();
 },{passive:false});
 canvas.addEventListener('touchstart',e=>{
@@ -421,12 +455,21 @@ canvas.addEventListener('touchmove',e=>{
   updateCamera();
 },{passive:true});
 
-function resetCamera(){
-  theta=-0.4;phi=0.42;radius=30;
-  camTarget.set(4,2,0);
-  updateCamera();
+function downloadPage(){
+  const html = document.documentElement.outerHTML;
+  const blob = new Blob([html], {type:'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'maquina_goldberg.html';
+  a.click();
 }
 
+
+function resetCamera(){
+  theta = 0.0; phi = 0.52; radius = 32;
+  camTarget.set(-1, 2, 0);
+  updateCamera();
+}
 </script>
 </body>
 </html>
